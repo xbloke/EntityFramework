@@ -77,6 +77,11 @@ namespace Microsoft.EntityFrameworkCore.SqlServer.FunctionalTests
             }
         }
 
+        public override Task Select_correlated_subquery_ordered()
+        {
+            return base.Select_correlated_subquery_ordered();
+        }
+
         public AsyncQuerySqlServerTest(NorthwindQuerySqlServerFixture fixture, ITestOutputHelper testOutputHelper)
             : base(fixture)
         {

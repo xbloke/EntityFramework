@@ -617,6 +617,11 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
                         .BindMethodCallExpression(methodCallExpression, CreateAliasedColumnExpressionCore);
             }
 
+            if (expression == null)
+            {
+                return _queryModelVisitor.BindMethodToOuterQueryParameter(methodCallExpression);
+            }
+
             return expression;
         }
 
@@ -683,6 +688,11 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
                                 .SingleOrDefault(ae => ae.SourceMember == expression.Member);
                     }
                 }
+            }
+
+            if (aliasExpression == null)
+            {
+                return _queryModelVisitor.BindMemberToOuterQueryParameter(expression);
             }
 
             return aliasExpression;
@@ -810,6 +820,9 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
 
             var subQueryModel = expression.QueryModel;
 
+            var parentQueryNavigationParameters 
+                = _queryModelVisitor.QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
+
             var subQueryOutputDataInfo = subQueryModel.GetOutputDataInfo();
             if (subQueryModel.IsIdentityQuery()
                 && subQueryModel.ResultOperators.Count == 1
@@ -891,6 +904,17 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
 
                         return selectExpression;
                     }
+                }
+            }
+
+            if (_queryModelVisitor.QueryCompilationContext.ParentQueryNavigationParameters.Count > parentQueryNavigationParameters.Count)
+            {
+                var elementsToRemove = _queryModelVisitor.QueryCompilationContext.ParentQueryNavigationParameters.Keys
+                    .Except(parentQueryNavigationParameters).ToList();
+
+                foreach (var elementToRemove in elementsToRemove)
+                {
+                    _queryModelVisitor.QueryCompilationContext.ParentQueryNavigationParameters.Remove(elementToRemove);
                 }
             }
 

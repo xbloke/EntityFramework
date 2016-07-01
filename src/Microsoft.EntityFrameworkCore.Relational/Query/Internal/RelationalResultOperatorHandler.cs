@@ -387,6 +387,16 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                         methodCallExpression.Arguments);
                 }
 
+                if (methodCallExpression.Method.MethodIsClosedFormOf(
+                    _relationalQueryCompilationContext.QueryMethodProvider.PreExecuteMethod))
+                {
+
+                    //todo: do this properly!!!
+
+
+                    return VisitMethodCall((MethodCallExpression)methodCallExpression.Arguments[1]);
+                }
+
                 return base.VisitMethodCall(methodCallExpression);
             }
         }

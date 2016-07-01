@@ -944,9 +944,14 @@ namespace Microsoft.EntityFrameworkCore.Query
 
                 foreach (var ordering in orderByClause.Orderings)
                 {
+                    var canBindPropertyToOuterParameter = CanBindPropertyToOuterParameter;
+                    CanBindPropertyToOuterParameter = false;
+
                     var sqlOrderingExpression
                         = sqlTranslatingExpressionVisitor
                             .Visit(ordering.Expression);
+
+                    CanBindPropertyToOuterParameter = canBindPropertyToOuterParameter;
 
                     if (sqlOrderingExpression == null)
                     {
@@ -1159,6 +1164,17 @@ namespace Microsoft.EntityFrameworkCore.Query
                 (property, qs) => BindMemberOrMethod(memberBinder, qs, property, bindSubQueries));
         }
 
+        private const string _outerQueryParameterNamePrefix = @"_outer_";
+
+        public virtual Expression BindMemberToOuterQueryParameter(
+            [NotNull] MemberExpression memberExpression)
+        {
+            return base.BindMemberExpression(
+                memberExpression, 
+                null,
+                (property, qs) => BindPropertyToOuterParameter(qs, property, true));
+        }
+
         /// <summary>
         ///     Bind a method call expression.
         /// </summary>
@@ -1225,6 +1241,17 @@ namespace Microsoft.EntityFrameworkCore.Query
                     });
         }
 
+        public virtual Expression BindMethodToOuterQueryParameter(
+            [NotNull] MethodCallExpression methodCallExpression)
+        {
+            Check.NotNull(methodCallExpression, nameof(methodCallExpression));
+
+            return base.BindMethodCallExpression<Expression>(
+                methodCallExpression, 
+                null,
+                (property, qs) => BindPropertyToOuterParameter(qs, property, false));
+        }
+
         private TResult BindMemberOrMethod<TResult>(
             Func<IProperty, IQuerySource, SelectExpression, TResult> memberBinder,
             IQuerySource querySource,
@@ -1269,5 +1296,95 @@ namespace Microsoft.EntityFrameworkCore.Query
         }
 
         #endregion
+
+        public virtual bool CanBindPropertyToOuterParameter { get; private set; } = true;
+
+        private ParameterExpression BindPropertyToOuterParameter(IQuerySource querySource, IProperty property, bool isMemberExpression)
+        {
+            if (querySource != null && CanBindPropertyToOuterParameter)
+            {
+                // TODO: make this work for more than one level up
+                // i.e. if the parameter was added higher, we could still reuse it many levels down the line
+                var parentSelectExpression = ParentQueryModelVisitor?.TryGetQuery(querySource);
+                if (parentSelectExpression != null)
+                {
+                    string parameterName;
+                    var key = new KeyValuePair<IQuerySource, IProperty>(querySource, property);
+                    if (!QueryCompilationContext.ParentQueryNavigationParameters.TryGetValue(key, out parameterName))
+                    {
+                        parameterName = _outerQueryParameterNamePrefix + property.Name;
+                        var parameterWithSamePrefixCount
+                            = QueryCompilationContext.ParentQueryNavigationParameters.Count(p => p.Value.StartsWith(parameterName));
+
+                        if (parameterWithSamePrefixCount > 0)
+                        {
+                            parameterName += parameterWithSamePrefixCount;
+                        }
+
+                        QueryCompilationContext.ParentQueryNavigationParameters[key] = parameterName;
+                        Expression = InjectParameterUpdatePreExecution(Expression, key, isMemberExpression);
+                    }
+
+                    return Expression.Parameter(
+                        property.ClrType,
+                        parameterName);
+                }
+            }
+
+            return null;
+        }
+
+
+        private readonly MethodInfo _addParameterMehodInfo
+            = typeof(QueryContext).GetMethod(nameof(QueryContext.AddParameter));
+
+        private readonly MethodInfo _removeParameterMehodInfo
+            = typeof(QueryContext).GetMethod(nameof(QueryContext.RemoveParameter));
+
+        public virtual Expression InjectParameterUpdatePreExecution(
+            Expression expression, 
+            KeyValuePair<IQuerySource, IProperty> mappingKey, 
+            bool isMemberExpression)
+        {
+            string parameterName;
+            if (QueryCompilationContext.ParentQueryNavigationParameters.TryGetValue(mappingKey, out parameterName))
+            {
+                var querySourceReference = new QuerySourceReferenceExpression(mappingKey.Key);
+                Expression propertyExpression = isMemberExpression
+                    ? Expression.Property(querySourceReference, mappingKey.Value.GetPropertyInfo())
+                    : CreatePropertyExpression(querySourceReference, mappingKey.Value);
+
+                if (propertyExpression.Type.IsValueType)
+                {
+                    propertyExpression = Expression.Convert(propertyExpression, typeof(object));
+                }
+
+                var addParameterExpression =
+                    Expression.Call(
+                        QueryContextParameter,
+                        _addParameterMehodInfo,
+                        Expression.Constant(parameterName),
+                        propertyExpression);
+
+                var removeParameterExpression =
+                    Expression.Call(
+                        QueryContextParameter,
+                        _removeParameterMehodInfo,
+                        Expression.Constant(parameterName));
+
+                var elementType = expression.Type.GetGenericArguments().Single();
+
+                // TODO: combine PreExecuteMethod (in case of composite keys etc)
+                var result = Expression.Call(
+                    QueryCompilationContext.QueryMethodProvider.PreExecuteMethod.MakeGenericMethod(elementType),
+                    Expression.Lambda(addParameterExpression),
+                    expression,
+                    Expression.Lambda(removeParameterExpression));
+
+                return result;
+            }
+
+            return expression;
+        }
     }
 }
