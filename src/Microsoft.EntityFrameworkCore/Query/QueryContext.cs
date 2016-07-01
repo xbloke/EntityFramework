@@ -109,6 +109,18 @@ namespace Microsoft.EntityFrameworkCore.Query
             return value;
         }
 
+        ///// <summary>
+        /////     Adds a new parameter or updates it's value if it was previously declared.
+        ///// </summary>
+        ///// <param name="name"> The name. </param>
+        ///// <param name="value">The value. </param>
+        //public virtual void AddOrUpdateParameter([NotNull] string name, [CanBeNull] object value)
+        //{
+        //    Check.NotEmpty(name, nameof(name));
+
+        //    _parameterValues[name] = value;
+        //}
+
         /// <summary>
         ///     Notify the state manager that a tracking query is starting.
         /// </summary>
