@@ -431,7 +431,8 @@ namespace Microsoft.EntityFrameworkCore.Query
                 {
                     var previousSelectExpression = TryGetQuery(previousQuerySource);
 
-                    if (previousSelectExpression != null)
+                    if (!RequiresClientSelectMany
+                        && previousSelectExpression != null)
                     {
                         if (!QueryCompilationContext.QuerySourceRequiresMaterialization(previousQuerySource))
                         {
@@ -604,12 +605,23 @@ namespace Microsoft.EntityFrameworkCore.Query
                     var sqlTranslatingExpressionVisitor
                         = _sqlTranslatingExpressionVisitorFactory.Create(this);
 
+                    var parentQueryNavigationParameters = QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
+
                     var predicate
                         = sqlTranslatingExpressionVisitor
                             .Visit(
                                 Expression.Equal(
                                     joinClause.OuterKeySelector,
                                     joinClause.InnerKeySelector));
+
+
+                    var foo = QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
+                    if (parentQueryNavigationParameters.Count != foo.Count)
+                    {
+                        throw new System.InvalidOperationException("fdgsd");
+                    }
+
+
 
                     if (predicate != null)
                     {
@@ -764,6 +776,12 @@ namespace Microsoft.EntityFrameworkCore.Query
 
                     AddQuery(querySource, subSelectExpression);
 
+                    var preExecuteExpressionExtractor = new PreExecuteExpressionExtractor(
+                        QueryCompilationContext.QueryMethodProvider);
+
+                    preExecuteExpressionExtractor.Visit(expression);
+                    preExecuteExpressionExtractor.Visit(subQueryModelVisitor.Expression);
+
                     var newExpression
                         = new QuerySourceUpdater(
                             querySource,
@@ -772,12 +790,67 @@ namespace Microsoft.EntityFrameworkCore.Query
                             subSelectExpression)
                             .Visit(subQueryModelVisitor.Expression);
 
-                    return newExpression;
+                    return CreatePreExecuteMethod(
+                        preExecuteExpressionExtractor.PreExecuteExpressions,
+                        newExpression,
+                        preExecuteExpressionExtractor.PostExecuteExpressions);
                 }
             }
 
             return expression;
         }
+
+        private class PreExecuteExpressionExtractor : ExpressionVisitorBase
+        {
+            private IQueryMethodProvider _queryMethodProvider;
+
+            public List<Expression> PreExecuteExpressions { get; private set; }
+            public List<Expression> PostExecuteExpressions { get; private set; }
+
+
+            public PreExecuteExpressionExtractor(IQueryMethodProvider queryMethodProvider)
+            {
+                _queryMethodProvider = queryMethodProvider;
+
+                PreExecuteExpressions = new List<Expression>();
+                PostExecuteExpressions = new List<Expression>();
+            }
+
+            protected override Expression VisitMethodCall(MethodCallExpression node)
+            {
+                if (node.Method.MethodIsClosedFormOf(_queryMethodProvider.PreExecuteMethod))
+                {
+                    var preExecuteExpression = ((LambdaExpression)node.Arguments[0]).Body;
+                    var preExecuteBlockExpression = preExecuteExpression as BlockExpression;
+                    if (preExecuteBlockExpression != null)
+                    {
+                        PreExecuteExpressions.AddRange(preExecuteBlockExpression.Expressions);
+                    }
+                    else
+                    {
+                        PreExecuteExpressions.Add(preExecuteExpression);
+                    }
+
+                    var postExecuteExpression = ((LambdaExpression)node.Arguments[2]).Body;
+                    var postExecuteBlockExpression = postExecuteExpression as BlockExpression;
+                    if (postExecuteBlockExpression != null)
+                    {
+                        PostExecuteExpressions.AddRange(postExecuteBlockExpression.Expressions);
+                    }
+                    else
+                    {
+                        PostExecuteExpressions.Add(postExecuteExpression);
+                    }
+
+                    return node;
+                }
+
+                return base.VisitMethodCall(node);
+            }
+
+        }
+
+
 
         private sealed class QuerySourceUpdater : ExpressionVisitorBase
         {
@@ -883,7 +956,12 @@ namespace Microsoft.EntityFrameworkCore.Query
                     = _sqlTranslatingExpressionVisitorFactory
                         .Create(this, selectExpression, whereClause.Predicate, _bindParentQueries);
 
+
+                var parentQueryNavigationParameters = QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
+
                 var sqlPredicateExpression = sqlTranslatingExpressionVisitor.Visit(whereClause.Predicate);
+
+                var foo = QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
 
                 if (sqlPredicateExpression != null)
                 {
@@ -900,6 +978,11 @@ namespace Microsoft.EntityFrameworkCore.Query
                 else
                 {
                     requiresClientFilter = true;
+
+                    if (parentQueryNavigationParameters.Count != foo.Count)
+                    {
+                        throw new System.InvalidOperationException("fdgsd");
+                    }
                 }
 
                 if (sqlTranslatingExpressionVisitor.ClientEvalPredicate != null
@@ -1341,7 +1424,7 @@ namespace Microsoft.EntityFrameworkCore.Query
         private readonly MethodInfo _removeParameterMehodInfo
             = typeof(QueryContext).GetMethod(nameof(QueryContext.RemoveParameter));
 
-        public virtual Expression InjectParameterUpdatePreExecution(
+        private Expression InjectParameterUpdatePreExecution(
             Expression expression, 
             KeyValuePair<IQuerySource, IProperty> mappingKey, 
             bool isMemberExpression)
@@ -1372,19 +1455,44 @@ namespace Microsoft.EntityFrameworkCore.Query
                         _removeParameterMehodInfo,
                         Expression.Constant(parameterName));
 
-                var elementType = expression.Type.GetGenericArguments().Single();
-
-                // TODO: combine PreExecuteMethod (in case of composite keys etc)
-                var result = Expression.Call(
-                    QueryCompilationContext.QueryMethodProvider.PreExecuteMethod.MakeGenericMethod(elementType),
-                    Expression.Lambda(addParameterExpression),
+                return CreatePreExecuteMethod(
+                    new[] { addParameterExpression },
                     expression,
-                    Expression.Lambda(removeParameterExpression));
-
-                return result;
+                    new[] { removeParameterExpression });
             }
 
             return expression;
+        }
+
+        private Expression CreatePreExecuteMethod(
+            IEnumerable<Expression> preExecuteActions, 
+            Expression source, 
+            IEnumerable<Expression> postExecuteActions)
+        {
+            Debug.Assert(preExecuteActions.Count() == postExecuteActions.Count(), 
+                "PreExecute and PostExecute should have matching number of operations.");
+
+            if (preExecuteActions.Count() == 0)
+            {
+                return source;
+            }
+
+            var preExecuteAction = preExecuteActions.Count() > 1
+                ? Expression.Block(preExecuteActions)
+                : preExecuteActions.Single();
+
+            var postExecuteAction = postExecuteActions.Count() > 1
+                ? Expression.Block(postExecuteActions)
+                : postExecuteActions.Single();
+
+
+            var elementType = source.Type.GetGenericArguments().Single();
+
+            return Expression.Call(
+                QueryCompilationContext.QueryMethodProvider.PreExecuteMethod.MakeGenericMethod(elementType),
+                Expression.Lambda(preExecuteAction),
+                source,
+                Expression.Lambda(postExecuteAction));
         }
     }
 }

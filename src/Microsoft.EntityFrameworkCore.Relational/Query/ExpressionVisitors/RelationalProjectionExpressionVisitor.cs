@@ -132,10 +132,19 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors
             {
                 var existingProjectionsCount = selectExpression.Projection.Count;
 
+                var parentQueryNavigationParameters
+                    = QueryModelVisitor.QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
+
                 var sqlExpression
                     = _sqlTranslatingExpressionVisitorFactory
                         .Create(QueryModelVisitor, selectExpression, inProjection: true)
                         .Visit(node);
+
+                var foo = QueryModelVisitor.QueryCompilationContext.ParentQueryNavigationParameters.Select(p => p.Key).ToList();
+                if (parentQueryNavigationParameters.Count != foo.Count)
+                {
+                    throw new System.InvalidOperationException("fdgsd");
+                }
 
                 if (sqlExpression == null)
                 {

@@ -418,9 +418,16 @@ FROM (
 SELECT [c5].[CustomerID], [c5].[Country]
 FROM [Customers] AS [c5]
 
-SELECT [o23].[OrderID], [c6].[Country]
+@_outer_OrderID: 10285
+
+SELECT TOP(1) [c6].[Country]
 FROM [Orders] AS [o23]
-INNER JOIN [Customers] AS [c6] ON [o23].[CustomerID] = [c6].[CustomerID]",
+INNER JOIN [Customers] AS [c6] ON [o23].[CustomerID] = [c6].[CustomerID]
+WHERE [o23].[OrderID] = @_outer_OrderID
+
+SELECT [c5].[CustomerID], [c5].[Country]
+FROM [Customers] AS [c5]
+",
                 Sql);
         }
 
@@ -5574,7 +5581,7 @@ ORDER BY [o].[CustomerID]",
             base.Select_nested_collection_deep();
 
             Assert.StartsWith(
-                @"ELECT [c].[CustomerID]
+                @"SELECT [c].[CustomerID]
 FROM [Customers] AS [c]
 WHERE [c].[City] = N'London'
 ORDER BY [c].[CustomerID]
