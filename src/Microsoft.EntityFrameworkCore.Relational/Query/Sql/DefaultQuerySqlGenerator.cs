@@ -1669,10 +1669,17 @@ namespace Microsoft.EntityFrameworkCore.Query.Sql
 
                 if (_isSearchCondition)
                 {
-                    return Expression.MakeBinary(
+                    Expression result = Expression.MakeBinary(
                         ExpressionType.Equal,
                         newExpression,
-                        Expression.Constant(true, typeof(bool)));
+                        Expression.Constant(true, newExpression.Type));
+
+                    if (result.Type != expression.Type)
+                    {
+                        result = Expression.Convert(result, expression.Type);
+                    }
+
+                    return result;
                 }
                 return newExpression;
             }

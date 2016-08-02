@@ -4,11 +4,11 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using JetBrains.Annotations;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.EntityFrameworkCore.Query.Internal;
@@ -449,13 +449,9 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors.Internal
         {
             Check.NotNull(node, nameof(node));
 
-            if (!EntityQueryModelVisitor.IsPropertyMethod(node.Method))
+            if (EntityQueryModelVisitor.IsPropertyMethod(node.Method))
             {
-                base.VisitMethodCall(node);
-            }
-
-            return
-                _queryModelVisitor.BindNavigationPathPropertyExpression(
+                var result = _queryModelVisitor.BindNavigationPathPropertyExpression(
                     node,
                     (ps, qs) =>
                     {
@@ -466,10 +462,44 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors.Internal
                             (string)((ConstantExpression)node.Arguments[1]).Value,
                             node.Type,
                             e => Expression.Call(node.Method, e, node.Arguments[1]));
-                    })
-                ?? base.VisitMethodCall(node);
-        }
+                    });
 
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            var newObject = Visit(node.Object);
+            var newArguments = node.Arguments.Select(Visit);
+
+            if (newObject != node.Object && newObject.Type.IsNullableType() && newObject.NodeType == ExpressionType.Conditional)
+            {
+                var nullSentinelRemoved = new NullReferenceSentinelsRemovingVisitor(processOnlyTopLevel: true).Visit(newObject).RemoveConvert();
+                if (nullSentinelRemoved != newObject)
+                {
+                    Expression newMethodCallExpression = node.Update(nullSentinelRemoved, newArguments);
+
+                    if (!newObject.Type.IsNullableType())
+                    {
+                        newObject = Expression.Convert(newObject, newObject.Type.MakeNullable());
+                    }
+
+                    if (!newMethodCallExpression.Type.IsNullableType())
+                    {
+                        newMethodCallExpression = Expression.Convert(newMethodCallExpression, newMethodCallExpression.Type.MakeNullable());
+                    }
+
+                    return Expression.Condition(
+                        Expression.NotEqual(newObject, Expression.Constant(null, newObject.Type)),
+                        newMethodCallExpression,
+                        Expression.Constant(null, newMethodCallExpression.Type));
+                }
+            }
+
+            return node.Update(newObject, newArguments);
+        }
+        
         private Expression RewriteNavigationProperties(
             List<IPropertyBase> properties, 
             IQuerySource querySource,
@@ -1020,7 +1050,7 @@ namespace Microsoft.EntityFrameworkCore.Query.ExpressionVisitors.Internal
 
                 if (whereClause.Predicate.Type == typeof(bool?))
                 {
-                    whereClause.Predicate = Expression.Convert(whereClause.Predicate, typeof(bool));
+                    whereClause.Predicate = Expression.Equal(whereClause.Predicate, Expression.Constant(true, typeof(bool?)));
                 }
             }
 

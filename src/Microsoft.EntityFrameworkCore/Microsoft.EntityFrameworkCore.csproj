@@ -220,6 +220,7 @@
     <Compile Include="Internal\ReferenceEqualityComparer.cs" />
     <Compile Include="Internal\ServiceProviderCache.cs" />
     <Compile Include="Internal\TypeExtensions.cs" />
+    <Compile Include="Query\ExpressionVisitors\Internal\NullReferenceSentinelsRemovingVisitor.cs" />
     <Compile Include="WarningBehavior.cs" />
     <Compile Include="Internal\WarningsConfiguration.cs" />
     <Compile Include="Metadata\Builders\CollectionNavigationBuilder.cs" />

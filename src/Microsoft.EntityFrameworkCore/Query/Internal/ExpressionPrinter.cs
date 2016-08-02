@@ -176,6 +176,7 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
                     VisitParameter((ParameterExpression)node);
                     break;
 
+                case ExpressionType.Not:
                 case ExpressionType.Convert:
                 case ExpressionType.Throw:
                     VisitUnary((UnaryExpression)node);
@@ -276,6 +277,8 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
         /// </summary>
         protected override Expression VisitConditional(ConditionalExpression node)
         {
+            _stringBuilder.Append("(");
+
             Visit(node.Test);
 
             _stringBuilder.Append(" ? ");
@@ -285,6 +288,8 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
             _stringBuilder.Append(" : ");
 
             Visit(node.IfFalse);
+
+            _stringBuilder.Append(")");
 
             return node;
         }
@@ -573,6 +578,15 @@ namespace Microsoft.EntityFrameworkCore.Query.Internal
             {
                 _stringBuilder.Append("throw ");
                 Visit(node.Operand);
+
+                return node;
+            }
+
+            if (node.NodeType == ExpressionType.Not)
+            {
+                _stringBuilder.Append("!(");
+                Visit(node.Operand);
+                _stringBuilder.Append(")");
 
                 return node;
             }
