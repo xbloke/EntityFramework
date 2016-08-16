@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Xml;
 using Microsoft.Build.Construction;
 using Microsoft.Build.Evaluation;
@@ -16,21 +16,24 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
 {
     public class MsBuildProjectContext : IProjectContext
     {
+        private readonly Project _project;
+
         public MsBuildProjectContext(string filePath, string configuration)
         {
-            var result = RunDesignTimeBuild(filePath, configuration);
-            var project = result.ProjectStateAfterBuild;
+            _project = CreateProject(filePath, configuration);
+            var result = RunDesignTimeBuild(_project);
+            var projectInstance = result.ProjectStateAfterBuild;
 
             Configuration = configuration;
             ProjectName = Path.GetFileNameWithoutExtension(filePath);
-            ProjectFullPath = GetProperty(project, "ProjectPath");
-            RootNamespace = GetProperty(project, "RootNamespace") ?? ProjectName;
-            TargetFramework = NuGetFramework.Parse(GetProperty(project, "NuGetTargetMoniker"));
-            IsClassLibrary = GetProperty(project, "OutputType").Equals("Library", StringComparison.OrdinalIgnoreCase);
-            TargetDirectory = GetProperty(project, "TargetDir");
-            Platform = GetProperty(project, "Platform");
-            AssemblyFullPath = GetProperty(project, "TargetPath");
-            PackagesDirectory = GetProperty(project, "NuGetPackageRoot");
+            ProjectFullPath = FindProperty(projectInstance, "ProjectPath");
+            RootNamespace = FindProperty(projectInstance, "RootNamespace") ?? ProjectName;
+            TargetFramework = NuGetFramework.Parse(FindProperty(projectInstance, "NuGetTargetMoniker"));
+            IsClassLibrary = FindProperty(projectInstance, "OutputType").Equals("Library", StringComparison.OrdinalIgnoreCase);
+            TargetDirectory = FindProperty(projectInstance, "TargetDir");
+            Platform = FindProperty(projectInstance, "Platform");
+            AssemblyFullPath = FindProperty(projectInstance, "TargetPath");
+            PackagesDirectory = FindProperty(projectInstance, "NuGetPackageRoot");
 
             // TODO get from actual properties according to TFM
             Config = AssemblyFullPath + ".config";
@@ -38,11 +41,30 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
             DepsJson = Path.Combine(TargetDirectory, Path.GetFileNameWithoutExtension(AssemblyFullPath), ".deps.json");
         }
 
-        private BuildResult RunDesignTimeBuild(string filePath, string configuration)
+        private BuildResult RunDesignTimeBuild(Project project)
         {
-            // TODO get SDK from muxer
-            string sdkPath = null; //@"C:\Users\namc\dev\dotnet-cli\artifacts\win10-x64\stage2\sdk\1.0.0-featmsbuild-003438";
-            Debug.Assert(sdkPath != null, "For now, you need to manually add the SDK path for dotnet");
+            var projectInstance = project.CreateProjectInstance();
+            var buildRequest = new BuildRequestData(projectInstance, new[] { "Build" });
+            var buildParams = new BuildParameters(project.ProjectCollection);
+
+            var result = BuildManager.DefaultBuildManager.Build(buildParams, buildRequest);
+
+            // this is a hack for failed project builds. ProjectStateAfterBuild == null after a failed build
+            // But the properties are still available to be read
+            result.ProjectStateAfterBuild = projectInstance;
+
+            return result;
+        }
+
+        private static Project CreateProject(string filePath, string configuration)
+        {
+            var sdkPath = new DotNetSdkResolver().ResolveLatest();
+            var msBuildFile = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "MSBuild.exe"
+                : "MSBuild";
+
+            Environment.SetEnvironmentVariable("MSBUILD_EXE_PATH", Path.Combine(sdkPath, msBuildFile));
+
             var globalProperties = new Dictionary<string, string>
             {
                 { "Configuration", configuration },
@@ -51,29 +73,16 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
                 { "MSBuildExtensionsPath", sdkPath }
             };
 
-            // TODO get this from .NET Core SDK
-            Environment.SetEnvironmentVariable("MSBUILD_EXE_PATH", Path.Combine(sdkPath, "MSBuild.exe"));
-
             var xmlReader = XmlReader.Create(new FileStream(filePath, FileMode.Open));
             var projectCollection = new ProjectCollection();
             var xml = ProjectRootElement.Create(xmlReader, projectCollection);
             xml.FullPath = filePath;
 
             var project = new Project(xml, globalProperties, /*toolsVersion*/ null, projectCollection);
-
-            var projectInstance = project.CreateProjectInstance();
-            var buildRequest = new BuildRequestData(projectInstance, new[] { "Build" });
-            var buildParams = new BuildParameters(project.ProjectCollection);
-
-            var result = BuildManager.DefaultBuildManager.Build(buildParams, buildRequest);
-
-            // this is a hack for failed project builds. ProjectStateAfterBuild == null after a failed build
-            result.ProjectStateAfterBuild = projectInstance;
-
-            return result;
+            return project;
         }
 
-        private string GetProperty(ProjectInstance project, string propertyName)
+        private string FindProperty(ProjectInstance project, string propertyName)
             => project.Properties.FirstOrDefault(p => p.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))?.EvaluatedValue;
 
         public NuGetFramework TargetFramework { get; }

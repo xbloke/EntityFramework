@@ -43,7 +43,13 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
         {
             // TODO 'build3' is a placeholder name
             // TODO align with actual command line arguments once those settle
-            return Command.CreateDotNet("build3", new[] { projectContext.ProjectFullPath, "--configuration", projectContext.Configuration });
+            return Command.CreateDotNet("build3", new[]
+            {
+                projectContext.ProjectFullPath,
+                "/t:Build",
+                // GenerateDependencyFile forces deps.json file to always be generated
+                $"/p:Configuration={projectContext.Configuration};GenerateDependencyFile=true" 
+            });
         }
 
         private static ICommand CreateDotNetBuildCommand([NotNull] IProjectContext projectContext)

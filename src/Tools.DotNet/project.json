@@ -27,8 +27,8 @@
     "Microsoft.Build.Utilities.Core": "0.1.0-*",
     "Microsoft.Build.Framework": "0.1.0-*",
     "Microsoft.EntityFrameworkCore.Design": "1.0.0-*",
-    "Microsoft.DotNet.Cli.Utils": "1.0.0-*",
-    "Microsoft.DotNet.ProjectModel": "1.0.0-*",
+    "Microsoft.DotNet.Cli.Utils": "1.0.0-preview2-003121",
+    "Microsoft.DotNet.ProjectModel": "1.0.0-rc3-003121",
     "Microsoft.Extensions.CommandLineUtils": "1.1.0-*",
     "Microsoft.NETCore.App": {
       "version": "1.0.0-*",
