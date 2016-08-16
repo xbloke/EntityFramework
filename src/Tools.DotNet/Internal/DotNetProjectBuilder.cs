@@ -13,7 +13,21 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
     {
         public void EnsureBuild(IProjectContext project)
         {
-            var buildExitCode = CreateBuildCommand(project)
+            ICommand command;
+            if (project is DotNetProjectContext)
+            {
+                command = CreateDotNetBuildCommand(project);
+            }
+            else if (project is MsBuildProjectContext)
+            {
+                command = CreateMsBuildBuildCommand(project);
+            }
+            else
+            {
+                throw new InvalidOperationException("Unrecognized project type");
+            }
+
+            var buildExitCode = command
                 .ForwardStdErr()
                 .ForwardStdOut()
                 .Execute()
@@ -25,13 +39,15 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
             }
         }
 
-        private static ICommand CreateBuildCommand([NotNull] IProjectContext projectContext)
+        private static ICommand CreateMsBuildBuildCommand([NotNull] IProjectContext projectContext)
         {
-            if (!(projectContext is DotNetProjectContext))
-            {
-                throw new PlatformNotSupportedException("Currently only .NET Core Projects (project.json/xproj) are supported");
-            }
+            // TODO 'build3' is a placeholder name
+            // TODO align with actual command line arguments once those settle
+            return Command.CreateDotNet("build3", new[] { projectContext.ProjectFullPath, "--configuration", projectContext.Configuration });
+        }
 
+        private static ICommand CreateDotNetBuildCommand([NotNull] IProjectContext projectContext)
+        {
             var args = new List<string>
             {
                 projectContext.ProjectFullPath,

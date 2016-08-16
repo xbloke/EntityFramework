@@ -22,6 +22,10 @@
     }
   },
   "dependencies": {
+    "Microsoft.Build": "0.1.0-*",
+    "Microsoft.Build.Tasks.Core": "0.1.0-*",
+    "Microsoft.Build.Utilities.Core": "0.1.0-*",
+    "Microsoft.Build.Framework": "0.1.0-*",
     "Microsoft.EntityFrameworkCore.Design": "1.0.0-*",
     "Microsoft.DotNet.Cli.Utils": "1.0.0-*",
     "Microsoft.DotNet.ProjectModel": "1.0.0-*",

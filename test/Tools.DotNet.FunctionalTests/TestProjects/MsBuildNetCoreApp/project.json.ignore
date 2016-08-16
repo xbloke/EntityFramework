@@ -1,0 +1,14 @@
+{
+    "dependencies": {
+        "Microsoft.DotNet.Core.Sdk": "1.0.0-*",
+        "Microsoft.EntityFrameworkCore.Sqlite": "1.1.0-*",
+        "Microsoft.EntityFrameworkCore.Design": "1.0.0-*",
+        "Microsoft.NETCore.App": {
+          "version": "1.0.0",
+          "type": "platform"
+        }
+    },
+    "frameworks": {
+        "netcoreapp1.0":{}
+    }
+}

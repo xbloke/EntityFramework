@@ -41,6 +41,13 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.FunctionalTests
         }
 
         [Fact]
+        public void MigrationsOnMsBuildNetCoreConsoleApp()
+        {
+            AddAndApplyMigrationImpl("MsBuildNetCoreApp", "TestContext", "Initial");
+            // TODO assert msbuild now sees the new files created, either via glob or via adding a new item
+        }
+
+        [Fact]
         public void MigrationsOnNetStandardClassLibraryWithExternalStartup()
         {
             AddAndApplyMigrationImpl("NetStandardClassLibrary", "NetStandardContext", "initialLibrary", startupProjectName: "NetCoreStartupApp");
