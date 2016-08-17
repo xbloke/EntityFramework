@@ -19,5 +19,6 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
         string ProjectFullPath { get; }
         string RootNamespace { get; }
         string TargetDirectory { get; }
+        IProjectFile ProjectFile { get; }
     }
 }

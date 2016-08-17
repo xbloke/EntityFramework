@@ -1,7 +1,6 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System.IO;
 using JetBrains.Annotations;
 using Microsoft.DotNet.ProjectModel;
 using Microsoft.EntityFrameworkCore.Utilities;
@@ -45,12 +44,30 @@ namespace Microsoft.EntityFrameworkCore.Tools.DotNet.Internal
                 ? _paths.RuntimeFiles.Executable
                 : _paths.RuntimeFiles.Assembly;
 
-        public Project Project => _project.ProjectFile;
+        public string Configuration { get; }
         public string ProjectFullPath => _project.ProjectFile.ProjectFilePath;
         public string ProjectName => _project.ProjectFile.Name;
         public string RootNamespace => _project.ProjectFile.Name;
         public string TargetDirectory => _paths.RuntimeOutputPath;
+        public IProjectFile ProjectFile => NullProjectFile.Instance;
 
-        public string Configuration { get; }
+        private class NullProjectFile : IProjectFile
+        {
+            public static IProjectFile Instance => new NullProjectFile();
+            public void AddDocument(string filePath)
+            {
+                // noop. We make the (not always, but easier) assumption that project.json compile settings use **\*.cs
+            }
+
+            public void RemoveDocument(string filePath)
+            {
+                // noop. We make the (not always, but easier) assumption that project.json compile settings use **\*.cs
+            }
+
+            public void Save()
+            {
+                // noop
+            }
+        }
     }
 }
