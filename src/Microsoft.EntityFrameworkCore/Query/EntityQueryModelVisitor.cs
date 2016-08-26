@@ -378,26 +378,51 @@ namespace Microsoft.EntityFrameworkCore.Query
                     .OfType<IncludeResultOperator>()
                     .Select(includeResultOperator =>
                         {
-                            var navigationPath
-                                = BindNavigationPathPropertyExpression(
-                                    includeResultOperator.NavigationPropertyPath,
-                                    (ps, _) =>
-                                        {
-                                            var properties = ps.ToArray();
-                                            var navigations = properties.OfType<INavigation>().ToArray();
+                            INavigation[] navigationPath;
+                            if (includeResultOperator.StringNavigationPropertyPath != null)
+                            {
+                                var entityType = QueryCompilationContext.Model.FindEntityType(
+                                    includeResultOperator.QuerySource.ItemType);
 
-                                            if (properties.Length != navigations.Length)
+                                var parts = includeResultOperator.StringNavigationPropertyPath.Split('.');
+
+                                navigationPath = new INavigation[parts.Length];
+                                for (var i = 0; i < parts.Length; i++)
+                                {
+                                    navigationPath[i] = entityType.FindNavigation(parts[i]);
+
+                                    if (navigationPath[i] == null)
+                                    {
+                                        throw new InvalidOperationException(
+                                            CoreStrings.IncludeBadNavigation(parts[i], entityType.DisplayName()));
+                                    }
+
+                                    entityType = navigationPath[i].GetTargetType();
+                                }
+                            }
+                            else
+                            {
+                                navigationPath
+                                    = BindNavigationPathPropertyExpression(
+                                        includeResultOperator.NavigationPropertyPath,
+                                        (ps, _) =>
                                             {
-                                                throw new InvalidOperationException(
-                                                    CoreStrings.IncludeNonBindableExpression(
-                                                        includeResultOperator.NavigationPropertyPath));
-                                            }
+                                                var properties = ps.ToArray();
+                                                var navigations = properties.OfType<INavigation>().ToArray();
 
-                                            return BindChainedNavigations(
-                                                navigations,
-                                                includeResultOperator.ChainedNavigationProperties)
-                                                .ToArray();
-                                        });
+                                                if (properties.Length != navigations.Length)
+                                                {
+                                                    throw new InvalidOperationException(
+                                                        CoreStrings.IncludeNonBindableExpression(
+                                                            includeResultOperator.NavigationPropertyPath));
+                                                }
+
+                                                return BindChainedNavigations(
+                                                    navigations,
+                                                    includeResultOperator.ChainedNavigationProperties)
+                                                    .ToArray();
+                                            });
+                            }
 
                             if (navigationPath == null)
                             {
